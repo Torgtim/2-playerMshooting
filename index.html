@@ -3,49 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Space PVP</title>
+    <title>PVP: Charged Battle</title>
     <style>
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
         canvas { display: block; }
         
-        /* Kontroll-knapper for begge spillere */
-        .controls {
-            position: absolute; width: 100%; display: flex; 
-            justify-content: space-between; padding: 0 20px; box-sizing: border-box;
-            z-index: 20; pointer-events: none;
-        }
+        /* Kontroller */
+        .controls { position: absolute; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 20; pointer-events: none; }
         .p1-controls { bottom: 20px; }
-        .p2-controls { top: 20px; transform: rotate(180deg); } /* Snu knapper for P2 */
+        .p2-controls { top: 20px; transform: rotate(180deg); }
+        .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.1); border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; pointer-events: auto; }
 
-        .btn {
-            width: 70px; height: 70px; background: rgba(255, 255, 255, 0.1);
-            border: 2px solid #fff; border-radius: 50%; display: flex;
-            align-items: center; justify-content: center; font-size: 30px;
-            pointer-events: auto;
-        }
+        /* UI */
+        .stats { position: absolute; width: 100%; text-align: center; font-weight: bold; font-size: 18px; pointer-events: none; }
+        #p1-stats { bottom: 120px; color: #0f0; }
+        #p2-stats { top: 120px; color: #0cf; transform: rotate(180deg); }
 
-        #gameOver {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 100; flex-direction: column; align-items: center; justify-content: center;
-        }
+        #gameOver { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         video { width: 100%; height: 70%; }
-        .win-text { font-size: 30px; color: yellow; margin-bottom: 10px; text-align: center; }
     </style>
 </head>
 <body>
 
+<div id="p2-stats">HP: <span id="p2-hp">3</span> | CD: <span id="p2-cd">KLAR</span></div>
 <div class="controls p2-controls">
     <div class="btn" id="p2Left">◀</div>
     <div class="btn" id="p2Right">▶</div>
 </div>
 
+<div id="p1-stats">HP: <span id="p1-hp">3</span> | CD: <span id="p1-cd">KLAR</span></div>
 <div class="controls p1-controls">
     <div class="btn" id="p1Left">◀</div>
     <div class="btn" id="p1Right">▶</div>
 </div>
 
 <div id="gameOver">
-    <div class="win-text" id="status">PLAYER X GOT ROLLED!</div>
+    <h1 id="status">PLAYER X GOT ROLLED!</h1>
     <video id="rickVideo" playsinline loop>
         <source src="https://dn721809.ca.archive.org/0/items/youtube-xvFZjo5PgG0/xvFZjo5PgG0.mp4" type="video/mp4">
     </video>
@@ -63,61 +56,82 @@
     let gameActive = true;
     const bullets = [];
 
-    const p1 = { x: canvas.width/2, y: canvas.height-100, color: '#0f0', dir: 0, w: 40, h: 20, id: 1 };
-    const p2 = { x: canvas.width/2, y: 100, color: '#0cf', dir: 0, w: 40, h: 20, id: 2 };
-
-    // --- KONTROLLER ---
-    function setupBtn(id, player, dirVal) {
-        const btn = document.getElementById(id);
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); player.dir = dirVal; });
-        btn.addEventListener('touchend', (e) => { e.preventDefault(); player.dir = 0; });
-    }
-
-    setupBtn('p1Left', p1, -1); setupBtn('p1Right', p1, 1);
-    setupBtn('p2Left', p2, 1);  setupBtn('p2Right', p2, -1); // Omvendt for P2
-
-    // Skyting: Trykk på øvre eller nedre halvdel
-    window.addEventListener('touchstart', (e) => {
-        if (!gameActive) return;
-        if (e.target.className.includes('btn')) return;
-        
-        const touchY = e.touches[0].clientY;
-        if (touchY > canvas.height / 2) shoot(p1, -10);
-        else shoot(p2, 10);
+    const createPlayer = (y, color, id) => ({
+        x: canvas.width / 2, y, color, id, 
+        w: 50, h: 25, dir: 0, hp: 3, 
+        cooldown: 0, charge: 0, isCharging: false
     });
 
-    function shoot(p, speed) {
-        bullets.push({ x: p.x + p.w/2, y: p.y, vy: speed, owner: p.id });
-    }
+    const p1 = createPlayer(canvas.height - 80, '#0f0', 1);
+    const p2 = createPlayer(80, '#0cf', 2);
 
-    function triggerWin(winnerId) {
-        gameActive = false;
-        document.getElementById('gameOver').style.display = 'flex';
-        document.getElementById('status').innerText = "PLAYER " + (winnerId === 1 ? "2" : "1") + " GOT RICK ROLLED!";
-        document.getElementById('rickVideo').play();
+    // --- INPUT ---
+    const setupBtn = (id, p, dir) => {
+        const b = document.getElementById(id);
+        b.addEventListener('touchstart', (e) => { e.preventDefault(); p.dir = dir; });
+        b.addEventListener('touchend', (e) => { e.preventDefault(); p.dir = 0; });
+    };
+    setupBtn('p1Left', p1, -1); setupBtn('p1Right', p1, 1);
+    setupBtn('p2Left', p2, 1);  setupBtn('p2Right', p2, -1);
+
+    window.addEventListener('touchstart', (e) => {
+        if (e.target.className.includes('btn')) return;
+        const p = e.touches[0].clientY > canvas.height/2 ? p1 : p2;
+        if (p.cooldown <= 0) p.isCharging = true;
+    });
+
+    window.addEventListener('touchend', (e) => {
+        // Vi sjekker alle touches for å se hvem som slapp
+        [p1, p2].forEach(p => {
+            if (p.isCharging) {
+                fire(p);
+                p.isCharging = false;
+            }
+        });
+    });
+
+    function fire(p) {
+        const damage = p.charge > 60 ? 3 : 1; // 3 liv hvis ladet i > 1 sek (60 frames)
+        const size = p.charge > 60 ? 20 : 6;
+        const speed = p.id === 1 ? -8 : 8;
+        
+        bullets.push({ x: p.x + p.w/2, y: p.y, vy: speed, dmg: damage, size: size, owner: p.id });
+        
+        p.charge = 0;
+        p.cooldown = 60; // 1 sekund cooldown
     }
 
     function update() {
         if (!gameActive) return;
 
         [p1, p2].forEach(p => {
-            p.x += p.dir * 7;
+            p.x += p.dir * 6;
             if (p.x < 0) p.x = 0;
             if (p.x > canvas.width - p.w) p.x = canvas.width - p.w;
+
+            if (p.cooldown > 0) p.cooldown--;
+            if (p.isCharging) p.charge++;
+
+            // Oppdater UI
+            document.getElementById(`p${p.id}-hp`).innerText = p.hp;
+            document.getElementById(`p${p.id}-cd`).innerText = p.cooldown > 0 ? "VENT" : "KLAR";
         });
 
         bullets.forEach((b, i) => {
             b.y += b.vy;
+            const target = b.owner === 1 ? p2 : p1;
             
-            // Sjekk treff på P1
-            if (b.owner === 2 && b.y > p1.y && b.y < p1.y + p1.h && b.x > p1.x && b.x < p1.x + p1.w) {
-                triggerWin(2);
+            if (b.x > target.x && b.x < target.x + target.w && 
+                b.y > target.y && b.y < target.y + target.h) {
+                target.hp -= b.dmg;
+                bullets.splice(i, 1);
+                if (target.hp <= 0) {
+                    gameActive = false;
+                    document.getElementById('gameOver').style.display = 'flex';
+                    document.getElementById('status').innerText = `PLAYER ${target.id} GOT ROLLED!`;
+                    document.getElementById('rickVideo').play();
+                }
             }
-            // Sjekk treff på P2
-            if (b.owner === 1 && b.y < p2.y + p2.h && b.y > p2.y && b.x > p2.x && b.x < p2.x + p2.w) {
-                triggerWin(1);
-            }
-
             if (b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
         });
 
@@ -128,19 +142,25 @@
     function draw() {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Midtlinje
-        ctx.strokeStyle = '#333';
-        ctx.setLineDash([10, 10]);
-        ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
 
-        // Tegn spillere
-        ctx.fillStyle = p1.color; ctx.fillRect(p1.x, p1.y, p1.w, p1.h);
-        ctx.fillStyle = p2.color; ctx.fillRect(p2.x, p2.y, p2.w, p2.h);
+        [p1, p2].forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x, p.y, p.w, p.h);
+            if (p.isCharging) {
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(p.x - 5, p.y - 5, p.w + 10, p.h + 10);
+                // Lademåler
+                ctx.fillStyle = 'red';
+                ctx.fillRect(p.x, p.id === 1 ? p.y + 30 : p.y - 15, (p.charge / 60) * p.w, 5);
+            }
+        });
 
-        // Tegn kuler
-        ctx.fillStyle = '#fff';
-        bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 10));
+        bullets.forEach(b => {
+            ctx.fillStyle = b.dmg > 1 ? '#ff00ff' : '#fff';
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
     }
 
     update();
