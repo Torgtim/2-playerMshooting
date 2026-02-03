@@ -8,21 +8,30 @@
         body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', sans-serif; overflow: hidden; touch-action: none; }
         canvas { display: block; }
         
+        /* Hjerter */
         .hearts { position: absolute; display: flex; gap: 5px; z-index: 25; pointer-events: none; }
         .p1-hearts { bottom: 110px; left: 20px; }
         .p2-hearts { top: 110px; right: 20px; transform: rotate(180deg); }
         .heart { font-size: 24px; color: #ff0044; }
 
+        /* Kontroller */
         .controls { position: absolute; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 20; pointer-events: none; }
         .p1-controls { bottom: 20px; }
         .p2-controls { top: 20px; transform: rotate(180deg); }
-        .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.1); border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; pointer-events: auto; }
+        .btn { width: 85px; height: 85px; background: rgba(255, 255, 255, 0.1); border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 35px; pointer-events: auto; }
 
-        #event-text { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 30px; font-weight: bold; color: yellow; text-align: center;
-            text-shadow: 0 0 10px #f00; pointer-events: none; z-index: 30; display: none;
+        /* Event Tekst (Delt skjerm) */
+        .event-banner {
+            position: absolute; width: 100%; height: 100%;
+            display: none; pointer-events: none; z-index: 30;
         }
+        .event-text {
+            position: absolute; width: 100%; text-align: center;
+            font-size: 28px; font-weight: bold; color: yellow;
+            text-shadow: 0 0 10px #f00;
+        }
+        #text-p1 { bottom: 55%; }
+        #text-p2 { top: 55%; transform: rotate(180deg); }
 
         #gameOver { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         video { width: 100%; height: 70%; }
@@ -30,19 +39,18 @@
 </head>
 <body>
 
-<div id="event-text">EVENT STARTING...</div>
-
-<div class="hearts p2-hearts" id="p2-hearts-container">
-    <span class="heart">❤</span><span class="heart">❤</span><span class="heart">❤</span>
+<div class="event-banner" id="event-banner">
+    <div class="event-text" id="text-p1">EVENT!</div>
+    <div class="event-text" id="text-p2">EVENT!</div>
 </div>
+
+<div class="hearts p2-hearts" id="p2-hearts-container">❤❤❤</div>
 <div class="controls p2-controls">
     <div class="btn" id="p2Left">◀</div>
     <div class="btn" id="p2Right">▶</div>
 </div>
 
-<div class="hearts p1-hearts" id="p1-hearts-container">
-    <span class="heart">❤</span><span class="heart">❤</span><span class="heart">❤</span>
-</div>
+<div class="hearts p1-hearts" id="p1-hearts-container">❤❤❤</div>
 <div class="controls p1-controls">
     <div class="btn" id="p1Left">◀</div>
     <div class="btn" id="p1Right">▶</div>
@@ -53,18 +61,28 @@
     <video id="rickVideo" playsinline loop>
         <source src="https://dn721809.ca.archive.org/0/items/youtube-xvFZjo5PgG0/xvFZjo5PgG0.mp4" type="video/mp4">
     </video>
-    <button onclick="location.reload()" style="padding:15px; margin-top:20px;">REMATCH</button>
+    <button onclick="location.reload()" style="padding:15px; margin-top:20px; border-radius:10px;">REMATCH</button>
 </div>
 
 <canvas id="game"></canvas>
 
 <script>
+    // --- KONTROLLPANEL (Her kan du redigere) ---
+    const SETTINGS = {
+        eventFrequency: 12000, // Tid mellom events (ms)
+        eventDuration: 5000,  // Hvor lenge varer de (ms)
+        baseSpeed: 7,         // Vanlig fart
+        superChargeTime: 60,  // 1 sekund lading
+        cooldownTime: 60      // 1 sekund mellom skudd
+    };
+
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
     let gameActive = true;
+    let currentSpeed = SETTINGS.baseSpeed;
     const bullets = [];
     const dangerZones = [];
     let activeEvent = null;
@@ -73,7 +91,7 @@
         x: canvas.width / 2, y, color, id, 
         w: 50, h: 25, dir: 0, hp: 3, 
         cooldown: 0, charge: 0, isCharging: false,
-        tripleShot: false
+        tripleShot: false, opacity: 1
     });
 
     const p1 = createPlayer(canvas.height - 80, '#0f0', 1);
@@ -81,7 +99,7 @@
 
     function updateHeartsUI(p) {
         const container = document.getElementById(`p${p.id}-hearts-container`);
-        container.innerHTML = "❤".repeat(Math.max(0, p.hp)).split("").map(h => `<span class="heart">${h}</span>`).join("");
+        container.innerHTML = '<span class="heart">❤</span>'.repeat(Math.max(0, Math.floor(p.hp)));
     }
 
     // --- INPUT ---
@@ -104,11 +122,11 @@
     });
 
     function fire(p) {
-        const isSuper = p.charge > 60;
+        const isSuper = p.charge > SETTINGS.superChargeTime;
         const damage = isSuper ? 3 : 1;
         const speed = p.id === 1 ? -9 : 9;
         
-        const createBullet = (vx = 0) => {
+        const createB = (vx = 0) => {
             bullets.push({ 
                 x: p.x + p.w/2, y: p.y, vx: vx, vy: speed, 
                 dmg: damage, size: isSuper ? 22 : 6, 
@@ -117,53 +135,79 @@
         };
 
         if (p.tripleShot) {
-            createBullet(-3); createBullet(0); createBullet(3);
+            createB(-3); createB(0); createB(3);
             p.tripleShot = false;
         } else {
-            createBullet(0);
+            createB(0);
         }
         
         p.charge = 0;
-        p.cooldown = (activeEvent === 'NO_CD') ? 5 : 60; 
+        p.cooldown = (activeEvent === 'NO_CD') ? 5 : SETTINGS.cooldownTime; 
     }
 
-    // --- EVENTS SYSTEM ---
+    // --- EVENT LOGIKK ---
     function triggerEvent() {
         if (!gameActive) return;
-        const events = ['NO_CD', 'TRIPLE', 'SUDDEN', 'DANGER'];
+        const events = ['NO_CD', 'TRIPLE', 'SUDDEN', 'DANGER', 'GHOST', 'SPEED', 'STORM'];
         const evt = events[Math.floor(Math.random() * events.length)];
-        const el = document.getElementById('event-text');
         
-        if (evt === 'NO_CD') {
-            el.innerText = "NO COOLDOWN!";
-            activeEvent = 'NO_CD';
-            setTimeout(() => activeEvent = null, 5000);
-        } else if (evt === 'TRIPLE') {
-            el.innerText = "NEXT SHOT: TRIPLE!";
-            p1.tripleShot = p2.tripleShot = true;
-        } else if (evt === 'SUDDEN') {
-            if (p1.hp > 2 && p2.hp > 2) {
-                el.innerText = "SUDDEN IMPACT: -2 HP!";
-                p1.hp -= 2; p2.hp -= 2;
-                updateHeartsUI(p1); updateHeartsUI(p2);
-            } else { triggerEvent(); return; }
-        } else if (evt === 'DANGER') {
-            el.innerText = "DANGER ZONES!";
-            for(let i=0; i<3; i++) {
-                dangerZones.push({x: Math.random()*(canvas.width-60), y: canvas.height/2 - 50 + (Math.random()*100 - 50), w: 60, h: 60, life: 300});
-            }
+        const banner = document.getElementById('event-banner');
+        const t1 = document.getElementById('text-p1');
+        const t2 = document.getElementById('text-p2');
+
+        banner.style.display = 'block';
+
+        switch(evt) {
+            case 'NO_CD':
+                t1.innerText = t2.innerText = "⚡ NO COOLDOWN! ⚡";
+                activeEvent = 'NO_CD';
+                setTimeout(() => activeEvent = null, SETTINGS.eventDuration);
+                break;
+            case 'TRIPLE':
+                t1.innerText = t2.innerText = "🏹 TRIPLE SHOT! 🏹";
+                p1.tripleShot = p2.tripleShot = true;
+                break;
+            case 'GHOST':
+                t1.innerText = t2.innerText = "👻 INVISIBILITY! 👻";
+                p1.opacity = 0.15; p2.opacity = 0.15;
+                setTimeout(() => { p1.opacity = 1; p2.opacity = 1; }, SETTINGS.eventDuration);
+                break;
+            case 'SPEED':
+                t1.innerText = t2.innerText = "🚀 HYPER SPEED! 🚀";
+                currentSpeed = 16;
+                setTimeout(() => currentSpeed = SETTINGS.baseSpeed, SETTINGS.eventDuration);
+                break;
+            case 'SUDDEN':
+                if (p1.hp > 2 && p2.hp > 2) {
+                    t1.innerText = t2.innerText = "💥 SUDDEN IMPACT! -2HP";
+                    p1.hp -= 2; p2.hp -= 2;
+                    updateHeartsUI(p1); updateHeartsUI(p2);
+                } else { triggerEvent(); return; }
+                break;
+            case 'DANGER':
+                t1.innerText = t2.innerText = "🔥 DANGER ZONES! 🔥";
+                for(let i=0; i<3; i++) dangerZones.push({x: Math.random()*(canvas.width-60), y: canvas.height/2-30, w: 60, h: 60, life: 300});
+                break;
+            case 'STORM':
+                t1.innerText = t2.innerText = "⛈️ BULLET STORM! ⛈️";
+                for(let i=0; i<12; i++) {
+                    setTimeout(() => {
+                        bullets.push({x: Math.random()*canvas.width, y: canvas.height/2, vx: (Math.random()-0.5)*4, vy: 5, dmg: 1, size: 5, owner: 0, color: 'yellow'});
+                        bullets.push({x: Math.random()*canvas.width, y: canvas.height/2, vx: (Math.random()-0.5)*4, vy: -5, dmg: 1, size: 5, owner: 0, color: 'yellow'});
+                    }, i * 300);
+                }
+                break;
         }
 
-        el.style.display = 'block';
-        setTimeout(() => el.style.display = 'none', 2000);
-        setTimeout(triggerEvent, 10000 + Math.random() * 5000);
+        setTimeout(() => banner.style.display = 'none', 2500);
+        setTimeout(triggerEvent, SETTINGS.eventFrequency + (Math.random() * 4000));
     }
 
     function checkDeath(target) {
         if (target.hp <= 0) {
             gameActive = false;
             document.getElementById('gameOver').style.display = 'flex';
-            document.getElementById('status').innerText = `PLAYER ${target.id === 1 ? '1' : '2'} GOT ROLLED!`;
+            document.getElementById('status').innerText = `PLAYER ${target.id === 1 ? '1' : '2'} GOT RICK-ROLLED!`;
             document.getElementById('rickVideo').play();
         }
     }
@@ -172,29 +216,27 @@
         if (!gameActive) return;
 
         [p1, p2].forEach(p => {
-            p.x += p.dir * 7;
+            p.x += p.dir * currentSpeed;
             p.x = Math.max(0, Math.min(canvas.width - p.w, p.x));
             if (p.cooldown > 0) p.cooldown--;
             if (p.isCharging) p.charge++;
 
-            // Danger zone kollisjon
             dangerZones.forEach(z => {
                 if (p.x < z.x + z.w && p.x + p.w > z.x && p.y < z.y + z.h && p.y + p.h > z.y) {
-                    p.hp -= 0.02; // Sakte skade over tid
-                    updateHeartsUI(p);
-                    checkDeath(p);
+                    p.hp -= 0.015; updateHeartsUI(p); checkDeath(p);
                 }
             });
         });
 
         bullets.forEach((b, i) => {
             b.y += b.vy; b.x += b.vx;
-            const target = b.owner === 1 ? p2 : p1;
-            if (b.x > target.x && b.x < target.x + target.w && b.y > target.y && b.y < target.y + target.h) {
-                target.hp -= b.dmg; updateHeartsUI(target);
-                bullets.splice(i, 1);
-                checkDeath(target);
-            }
+            [p1, p2].forEach(target => {
+                if (b.owner !== target.id && b.x > target.x && b.x < target.x + target.w && b.y > target.y && b.y < target.y + target.h) {
+                    target.hp -= b.dmg; updateHeartsUI(target);
+                    bullets.splice(i, 1);
+                    checkDeath(target);
+                }
+            });
             if (b.y < -50 || b.y > canvas.height + 50) bullets.splice(i, 1);
         });
 
@@ -216,10 +258,12 @@
         });
 
         [p1, p2].forEach(p => {
+            ctx.globalAlpha = p.opacity;
             ctx.fillStyle = p.color;
-            if (p.isCharging && p.charge > 60) { ctx.shadowBlur = 15; ctx.shadowColor = '#ff0044'; }
+            if (p.isCharging && p.charge > SETTINGS.superChargeTime) { ctx.shadowBlur = 15; ctx.shadowColor = '#ff0044'; }
             ctx.fillRect(p.x, p.y, p.w, p.h);
             ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
         });
 
         bullets.forEach(b => {
