@@ -3,28 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PVP: Heart Battle</title>
+    <title>PVP: Chaos Edition</title>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', sans-serif; overflow: hidden; touch-action: none; }
         canvas { display: block; }
         
-        /* Hjerte-beholdere */
         .hearts { position: absolute; display: flex; gap: 5px; z-index: 25; pointer-events: none; }
         .p1-hearts { bottom: 110px; left: 20px; }
         .p2-hearts { top: 110px; right: 20px; transform: rotate(180deg); }
-        .heart { font-size: 24px; color: #ff0044; text-shadow: 0 0 5px #000; }
+        .heart { font-size: 24px; color: #ff0044; }
 
         .controls { position: absolute; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 20; pointer-events: none; }
         .p1-controls { bottom: 20px; }
         .p2-controls { top: 20px; transform: rotate(180deg); }
         .btn { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.1); border: 3px solid #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; pointer-events: auto; }
 
+        #event-text { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 30px; font-weight: bold; color: yellow; text-align: center;
+            text-shadow: 0 0 10px #f00; pointer-events: none; z-index: 30; display: none;
+        }
+
         #gameOver { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         video { width: 100%; height: 70%; }
-        .win-msg { font-size: 24px; color: #f0f; margin-bottom: 20px; text-align: center; }
     </style>
 </head>
 <body>
+
+<div id="event-text">EVENT STARTING...</div>
 
 <div class="hearts p2-hearts" id="p2-hearts-container">
     <span class="heart">❤</span><span class="heart">❤</span><span class="heart">❤</span>
@@ -43,11 +49,11 @@
 </div>
 
 <div id="gameOver">
-    <div class="win-msg" id="status">GET ROLLED!</div>
+    <h1 id="status" style="color:white; text-align:center;">GET ROLLED!</h1>
     <video id="rickVideo" playsinline loop>
         <source src="https://dn721809.ca.archive.org/0/items/youtube-xvFZjo5PgG0/xvFZjo5PgG0.mp4" type="video/mp4">
     </video>
-    <button onclick="location.reload()" style="padding:15px; margin-top:20px; border-radius:10px;">NY KAMP</button>
+    <button onclick="location.reload()" style="padding:15px; margin-top:20px;">REMATCH</button>
 </div>
 
 <canvas id="game"></canvas>
@@ -60,23 +66,22 @@
 
     let gameActive = true;
     const bullets = [];
+    const dangerZones = [];
+    let activeEvent = null;
 
     const createPlayer = (y, color, id) => ({
         x: canvas.width / 2, y, color, id, 
         w: 50, h: 25, dir: 0, hp: 3, 
-        cooldown: 0, charge: 0, isCharging: false
+        cooldown: 0, charge: 0, isCharging: false,
+        tripleShot: false
     });
 
     const p1 = createPlayer(canvas.height - 80, '#0f0', 1);
     const p2 = createPlayer(80, '#0cf', 2);
 
-    // Oppdater hjerter i DOM
     function updateHeartsUI(p) {
         const container = document.getElementById(`p${p.id}-hearts-container`);
-        container.innerHTML = "";
-        for(let i=0; i<p.hp; i++) {
-            container.innerHTML += '<span class="heart">❤</span>';
-        }
+        container.innerHTML = "❤".repeat(Math.max(0, p.hp)).split("").map(h => `<span class="heart">${h}</span>`).join("");
     }
 
     // --- INPUT ---
@@ -89,38 +94,78 @@
     setupBtn('p2Left', p2, 1);  setupBtn('p2Right', p2, -1);
 
     window.addEventListener('touchstart', (e) => {
-        if (e.target.className.includes('btn')) return;
+        if (!gameActive || e.target.className.includes('btn')) return;
         const p = e.touches[0].clientY > canvas.height/2 ? p1 : p2;
         if (p.cooldown <= 0) p.isCharging = true;
     });
 
     window.addEventListener('touchend', () => {
-        [p1, p2].forEach(p => {
-            if (p.isCharging) {
-                fire(p);
-                p.isCharging = false;
-            }
-        });
+        [p1, p2].forEach(p => { if (p.isCharging) { fire(p); p.isCharging = false; } });
     });
 
     function fire(p) {
         const isSuper = p.charge > 60;
         const damage = isSuper ? 3 : 1;
-        const size = isSuper ? 22 : 6;
         const speed = p.id === 1 ? -9 : 9;
         
-        bullets.push({ 
-            x: p.x + p.w/2, 
-            y: p.y, 
-            vy: speed, 
-            dmg: damage, 
-            size: size, 
-            owner: p.id,
-            color: isSuper ? '#ff0044' : '#fff'
-        });
+        const createBullet = (vx = 0) => {
+            bullets.push({ 
+                x: p.x + p.w/2, y: p.y, vx: vx, vy: speed, 
+                dmg: damage, size: isSuper ? 22 : 6, 
+                owner: p.id, color: isSuper ? '#ff0044' : '#fff'
+            });
+        };
+
+        if (p.tripleShot) {
+            createBullet(-3); createBullet(0); createBullet(3);
+            p.tripleShot = false;
+        } else {
+            createBullet(0);
+        }
         
         p.charge = 0;
-        p.cooldown = 60; 
+        p.cooldown = (activeEvent === 'NO_CD') ? 5 : 60; 
+    }
+
+    // --- EVENTS SYSTEM ---
+    function triggerEvent() {
+        if (!gameActive) return;
+        const events = ['NO_CD', 'TRIPLE', 'SUDDEN', 'DANGER'];
+        const evt = events[Math.floor(Math.random() * events.length)];
+        const el = document.getElementById('event-text');
+        
+        if (evt === 'NO_CD') {
+            el.innerText = "NO COOLDOWN!";
+            activeEvent = 'NO_CD';
+            setTimeout(() => activeEvent = null, 5000);
+        } else if (evt === 'TRIPLE') {
+            el.innerText = "NEXT SHOT: TRIPLE!";
+            p1.tripleShot = p2.tripleShot = true;
+        } else if (evt === 'SUDDEN') {
+            if (p1.hp > 2 && p2.hp > 2) {
+                el.innerText = "SUDDEN IMPACT: -2 HP!";
+                p1.hp -= 2; p2.hp -= 2;
+                updateHeartsUI(p1); updateHeartsUI(p2);
+            } else { triggerEvent(); return; }
+        } else if (evt === 'DANGER') {
+            el.innerText = "DANGER ZONES!";
+            for(let i=0; i<3; i++) {
+                dangerZones.push({x: Math.random()*(canvas.width-60), y: canvas.height/2 - 50 + (Math.random()*100 - 50), w: 60, h: 60, life: 300});
+            }
+        }
+
+        el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 2000);
+        setTimeout(triggerEvent, 10000 + Math.random() * 5000);
+    }
+
+    function checkDeath(target) {
+        if (target.hp <= 0) {
+            gameActive = false;
+            document.getElementById('gameOver').style.display = 'flex';
+            document.getElementById('status').innerText = `PLAYER ${target.id === 1 ? '1' : '2'} GOT ROLLED!`;
+            document.getElementById('rickVideo').play();
+        }
     }
 
     function update() {
@@ -128,72 +173,62 @@
 
         [p1, p2].forEach(p => {
             p.x += p.dir * 7;
-            if (p.x < 0) p.x = 0;
-            if (p.x > canvas.width - p.w) p.x = canvas.width - p.w;
-
+            p.x = Math.max(0, Math.min(canvas.width - p.w, p.x));
             if (p.cooldown > 0) p.cooldown--;
             if (p.isCharging) p.charge++;
+
+            // Danger zone kollisjon
+            dangerZones.forEach(z => {
+                if (p.x < z.x + z.w && p.x + p.w > z.x && p.y < z.y + z.h && p.y + p.h > z.y) {
+                    p.hp -= 0.02; // Sakte skade over tid
+                    updateHeartsUI(p);
+                    checkDeath(p);
+                }
+            });
         });
 
         bullets.forEach((b, i) => {
-            b.y += b.vy;
+            b.y += b.vy; b.x += b.vx;
             const target = b.owner === 1 ? p2 : p1;
-            
-            if (b.x > target.x && b.x < target.x + target.w && 
-                b.y > target.y && b.y < target.y + target.h) {
-                target.hp -= b.dmg;
-                updateHeartsUI(target);
+            if (b.x > target.x && b.x < target.x + target.w && b.y > target.y && b.y < target.y + target.h) {
+                target.hp -= b.dmg; updateHeartsUI(target);
                 bullets.splice(i, 1);
-                
-                if (target.hp <= 0) {
-                    gameActive = false;
-                    document.getElementById('gameOver').style.display = 'flex';
-                    document.getElementById('status').innerText = `SPILLER ${target.id === 1 ? '1' : '2'} BLE RICK-ROLLET!`;
-                    document.getElementById('rickVideo').play();
-                }
+                checkDeath(target);
             }
             if (b.y < -50 || b.y > canvas.height + 50) bullets.splice(i, 1);
         });
+
+        dangerZones.forEach((z, i) => { z.life--; if(z.life <= 0) dangerZones.splice(i, 1); });
 
         draw();
         requestAnimationFrame(update);
     }
 
     function draw() {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Midtlinje
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-        ctx.setLineDash([5, 15]);
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.setLineDash([5, 15]);
         ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
+
+        dangerZones.forEach(z => {
+            ctx.fillStyle = `rgba(255, 0, 0, ${Math.abs(Math.sin(Date.now()/200)) * 0.5})`;
+            ctx.fillRect(z.x, z.y, z.w, z.h);
+        });
 
         [p1, p2].forEach(p => {
             ctx.fillStyle = p.color;
-            // Tegn skipet med en liten glød hvis den lader
-            if (p.isCharging && p.charge > 60) {
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#ff0044';
-            } else {
-                ctx.shadowBlur = 0;
-            }
+            if (p.isCharging && p.charge > 60) { ctx.shadowBlur = 15; ctx.shadowColor = '#ff0044'; }
             ctx.fillRect(p.x, p.y, p.w, p.h);
             ctx.shadowBlur = 0;
         });
 
         bullets.forEach(b => {
             ctx.fillStyle = b.color;
-            if (b.dmg > 1) {
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = b.color;
-            }
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2); ctx.fill();
         });
     }
 
+    setTimeout(triggerEvent, 5000);
     update();
 </script>
 </body>
