@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Space PVP</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; }
+        
+        /* Kontroll-knapper for begge spillere */
+        .controls {
+            position: absolute; width: 100%; display: flex; 
+            justify-content: space-between; padding: 0 20px; box-sizing: border-box;
+            z-index: 20; pointer-events: none;
+        }
+        .p1-controls { bottom: 20px; }
+        .p2-controls { top: 20px; transform: rotate(180deg); } /* Snu knapper for P2 */
+
+        .btn {
+            width: 70px; height: 70px; background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #fff; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; font-size: 30px;
+            pointer-events: auto;
+        }
+
+        #gameOver {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100; flex-direction: column; align-items: center; justify-content: center;
+        }
+        video { width: 100%; height: 70%; }
+        .win-text { font-size: 30px; color: yellow; margin-bottom: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="controls p2-controls">
+    <div class="btn" id="p2Left">◀</div>
+    <div class="btn" id="p2Right">▶</div>
+</div>
+
+<div class="controls p1-controls">
+    <div class="btn" id="p1Left">◀</div>
+    <div class="btn" id="p1Right">▶</div>
+</div>
+
+<div id="gameOver">
+    <div class="win-text" id="status">PLAYER X GOT ROLLED!</div>
+    <video id="rickVideo" playsinline loop>
+        <source src="https://dn721809.ca.archive.org/0/items/youtube-xvFZjo5PgG0/xvFZjo5PgG0.mp4" type="video/mp4">
+    </video>
+    <button onclick="location.reload()" style="padding:15px; margin-top:10px;">REMATCH</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let gameActive = true;
+    const bullets = [];
+
+    const p1 = { x: canvas.width/2, y: canvas.height-100, color: '#0f0', dir: 0, w: 40, h: 20, id: 1 };
+    const p2 = { x: canvas.width/2, y: 100, color: '#0cf', dir: 0, w: 40, h: 20, id: 2 };
+
+    // --- KONTROLLER ---
+    function setupBtn(id, player, dirVal) {
+        const btn = document.getElementById(id);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); player.dir = dirVal; });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); player.dir = 0; });
+    }
+
+    setupBtn('p1Left', p1, -1); setupBtn('p1Right', p1, 1);
+    setupBtn('p2Left', p2, 1);  setupBtn('p2Right', p2, -1); // Omvendt for P2
+
+    // Skyting: Trykk på øvre eller nedre halvdel
+    window.addEventListener('touchstart', (e) => {
+        if (!gameActive) return;
+        if (e.target.className.includes('btn')) return;
+        
+        const touchY = e.touches[0].clientY;
+        if (touchY > canvas.height / 2) shoot(p1, -10);
+        else shoot(p2, 10);
+    });
+
+    function shoot(p, speed) {
+        bullets.push({ x: p.x + p.w/2, y: p.y, vy: speed, owner: p.id });
+    }
+
+    function triggerWin(winnerId) {
+        gameActive = false;
+        document.getElementById('gameOver').style.display = 'flex';
+        document.getElementById('status').innerText = "PLAYER " + (winnerId === 1 ? "2" : "1") + " GOT RICK ROLLED!";
+        document.getElementById('rickVideo').play();
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        [p1, p2].forEach(p => {
+            p.x += p.dir * 7;
+            if (p.x < 0) p.x = 0;
+            if (p.x > canvas.width - p.w) p.x = canvas.width - p.w;
+        });
+
+        bullets.forEach((b, i) => {
+            b.y += b.vy;
+            
+            // Sjekk treff på P1
+            if (b.owner === 2 && b.y > p1.y && b.y < p1.y + p1.h && b.x > p1.x && b.x < p1.x + p1.w) {
+                triggerWin(2);
+            }
+            // Sjekk treff på P2
+            if (b.owner === 1 && b.y < p2.y + p2.h && b.y > p2.y && b.x > p2.x && b.x < p2.x + p2.w) {
+                triggerWin(1);
+            }
+
+            if (b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
+        });
+
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function draw() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Midtlinje
+        ctx.strokeStyle = '#333';
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2); ctx.stroke();
+
+        // Tegn spillere
+        ctx.fillStyle = p1.color; ctx.fillRect(p1.x, p1.y, p1.w, p1.h);
+        ctx.fillStyle = p2.color; ctx.fillRect(p2.x, p2.y, p2.w, p2.h);
+
+        // Tegn kuler
+        ctx.fillStyle = '#fff';
+        bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 10));
+    }
+
+    update();
+</script>
+</body>
+</html>
